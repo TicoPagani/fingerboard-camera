@@ -14,21 +14,25 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
+
+      - uses: android-actions/setup-android@v3
 
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
 
       - name: Compilar
-        run: gradle assembleRelease --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleRelease --no-daemon --console=plain 2>&1 | tee build.log
 
       - name: Renomear APK
         run: cp app/build/outputs/apk/release/app-release.apk fingerboard-camera.apk
@@ -42,8 +46,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          gh release delete build-log --yes --cleanup-tag || true
           gh release delete latest --yes --cleanup-tag || true
           gh release create latest fingerboard-camera.apk \
             --title "Fingerboard Camera · build ${{ github.run_number }}" \
             --notes "Baixe o fingerboard-camera.apk abaixo e instale no celular. Commit: ${{ github.sha }}" \
+            --target "${{ github.sha }}"
+
+      - name: Publicar log do erro
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete build-log --yes --cleanup-tag || true
+          gh release create build-log build.log --prerelease \
+            --title "Log do build que falhou (${{ github.run_number }})" \
+            --notes "Log da compilação que deu erro." \
             --target "${{ github.sha }}"
