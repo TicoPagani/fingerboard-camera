@@ -162,7 +162,7 @@ class CameraController(private val context: Context) {
                 }
                 appendLine("Câmera $id · $facing · focal ${"%.2f".format(Locale.US, focal(id))}mm · sensor ${sensorOrientation(id)}°")
                 val caps = c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES) ?: intArrayOf()
-                val names = caps.mapNotNull {
+                val names = caps.toList().mapNotNull {
                     when (it) {
                         CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_CONSTRAINED_HIGH_SPEED_VIDEO -> "alta-velocidade"
                         CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA -> "multi-câmera"
