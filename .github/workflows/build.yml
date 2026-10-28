@@ -1,0 +1,49 @@
+name: Gerar APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Compilar
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Renomear APK
+        run: cp app/build/outputs/apk/release/app-release.apk fingerboard-camera.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fingerboard-camera-apk
+          path: fingerboard-camera.apk
+
+      - name: Publicar na página de downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest fingerboard-camera.apk \
+            --title "Fingerboard Camera · build ${{ github.run_number }}" \
+            --notes "Baixe o fingerboard-camera.apk abaixo e instale no celular. Commit: ${{ github.sha }}" \
+            --target "${{ github.sha }}"
