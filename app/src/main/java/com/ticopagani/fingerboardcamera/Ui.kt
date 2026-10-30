@@ -196,10 +196,11 @@ class RangeSliderView(ctx: Context) : View(ctx) {
         p.color = Pal.REC
         val ph = xOf(playhead)
         c.drawRect(ph - 2f, 0f, ph + 2f, height.toFloat(), p)
-        if (highlight) {
-            drawHandle(c, xOf(start))
-            drawHandle(c, xOf(end))
-        }
+        // As barras ficam sempre visíveis: arrastar uma delas já liga o slow.
+        if (!highlight) p.alpha = 150
+        drawHandle(c, xOf(start))
+        drawHandle(c, xOf(end))
+        p.alpha = 255
     }
 
     private fun drawHandle(c: Canvas, x: Float) {
@@ -210,7 +211,7 @@ class RangeSliderView(ctx: Context) : View(ctx) {
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
-        if (!highlight || !isEnabled) return false
+        if (!isEnabled) return false
         val f = fOf(e.x)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {

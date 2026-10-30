@@ -9,6 +9,8 @@ import android.provider.MediaStore
 import android.content.pm.ActivityInfo
 import android.content.res.ColorStateList
 import android.graphics.SurfaceTexture
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.opengl.GLSurfaceView
@@ -51,6 +53,7 @@ class EditorActivity : Activity() {
     private var fishPct = 75
     private var vigPct = 60
     private var mult = 4
+    private var defaultSlow = 4
     private var keepOrig = true
     private var durationSec = 1.0
     private var durationMs = 1
@@ -100,6 +103,7 @@ class EditorActivity : Activity() {
         } finally {
             r.release()
         }
+        probeFps()?.let { measuredFps = it; fpsInfo = " · ${Math.round(it / 10) * 10}fps" }
         durationSec = durationMs / 1000.0
         val srcAspect = if (rotation % 180 != 0) vh.toFloat() / vw else vw.toFloat() / vh
         aspect = meta.aspect ?: srcAspect
@@ -112,11 +116,8 @@ class EditorActivity : Activity() {
 
         // Clipe em 240 ganha a opção 8x (0.125x), que ainda sai a 30fps lisinho.
         if (slowFps >= 240) speeds = listOf(1, 2, 4, 8)
-        mult = when {
-            slowFps >= 240 -> 8
-            slowFps > 0 -> 4
-            else -> 1
-        }
+        defaultSlow = if (slowFps >= 240) 8 else 4
+        mult = if (slowFps > 0) defaultSlow else 1
         requestedOrientation = if (portrait) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
@@ -347,7 +348,10 @@ class EditorActivity : Activity() {
         playBtn = Chip(this, "II").apply { radiusDp = 22; setOnClickListener { togglePlay() } }
         row.addView(playBtn, lp(dp(44), dp(44)))
         slider = RangeSliderView(this).apply {
-            onChange = { _, _ -> refresh() }
+            onChange = { _, _ ->
+                if (mult == 1) mult = defaultSlow
+                refresh()
+            }
         }
         row.addView(slider, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(12) })
         return row
@@ -451,6 +455,31 @@ class EditorActivity : Activity() {
         panel.addView(exportBtn, lp(-1, dp(52)).apply { topMargin = dp(10) })
         root.addView(panel, lp(-1, -2))
         return root
+    }
+
+    /** Fps real do vídeo, medido pelos tempos dos primeiros quadros (mais confiável que o cabeçalho). */
+    private fun probeFps(): Double? {
+        val ex = MediaExtractor()
+        return try {
+            ex.setDataSource(this, uri, null)
+            val t = (0 until ex.trackCount).firstOrNull {
+                ex.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+            } ?: return null
+            ex.selectTrack(t)
+            val times = ArrayList<Long>()
+            while (times.size < 120 && ex.sampleTime >= 0) {
+                times.add(ex.sampleTime)
+                ex.advance()
+            }
+            if (times.size < 10) return null
+            times.sort()
+            val span = times.last() - times.first()
+            if (span <= 0) null else (times.size - 1) * 1_000_000.0 / span
+        } catch (e: Exception) {
+            null
+        } finally {
+            ex.release()
+        }
     }
 
     /** Abre o seletor da galeria pra escolher qualquer clipe já gravado. */
