@@ -1,22 +1,59 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Logo B "Frame de vídeo": mão no fingerboard sobre círculo âmbar com vinheta. Arte em 200x200, encaixada na área segura do ícone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- lente olho de peixe: anel âmbar com "vidro" curvo -->
-    <path
-        android:fillColor="#FFFFB000"
-        android:pathData="M54,28a26,26 0,1 1,0 52a26,26 0,1 1,0 -52z" />
-    <path
-        android:fillColor="#FF0B0B0A"
-        android:pathData="M54,33a21,21 0,1 1,0 42a21,21 0,1 1,0 -42z" />
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#FFF2EFE6"
-        android:strokeWidth="2.5"
-        android:pathData="M37,54c6,-9 28,-9 34,0M37,54c6,9 28,9 34,0" />
-    <path
-        android:fillColor="#FFF2EFE6"
-        android:pathData="M54,49a5,5 0,1 1,0 10a5,5 0,1 1,0 -10z" />
+    <group
+        android:scaleX="0.4"
+        android:scaleY="0.4"
+        android:translateX="14"
+        android:translateY="14">
+
+        <!-- frame âmbar -->
+        <path
+            android:fillColor="#FFFFB000"
+            android:pathData="M100,14a86,86 0,1 1,0 172a86,86 0,1 1,0 -172z" />
+
+        <!-- mão (dois dedos) -->
+        <path
+            android:fillColor="#FF0B0B0A"
+            android:pathData="M76,38 C86,24 118,24 128,40 C138,56 134,74 126,84 L136,132 L116,134 L104,96 L94,134 L74,132 L80,86 C68,74 66,52 76,38 Z" />
+
+        <!-- shape -->
+        <path
+            android:fillColor="#FF0B0B0A"
+            android:pathData="M36,128 C40,150 160,150 164,128 C166,120 160,118 156,124 C148,136 52,136 44,124 C40,118 34,120 36,128 Z" />
+        <path
+            android:strokeColor="#FFFFB000"
+            android:strokeWidth="4"
+            android:strokeLineCap="round"
+            android:pathData="M66,142 Q100,150 134,142" />
+
+        <!-- rodinhas -->
+        <path
+            android:fillColor="#FF0B0B0A"
+            android:pathData="M68,148a8,8 0,1 1,0 16a8,8 0,1 1,0 -16z" />
+        <path
+            android:fillColor="#FF0B0B0A"
+            android:pathData="M132,148a8,8 0,1 1,0 16a8,8 0,1 1,0 -16z" />
+
+        <!-- vinheta: cantos pretos -->
+        <path android:pathData="M100,14a86,86 0,1 1,0 172a86,86 0,1 1,0 -172z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="radial"
+                    android:centerX="100"
+                    android:centerY="100"
+                    android:gradientRadius="86">
+                    <item android:offset="0" android:color="#000B0B0A" />
+                    <item android:offset="0.74" android:color="#000B0B0A" />
+                    <item android:offset="0.9" android:color="#D90B0B0A" />
+                    <item android:offset="1" android:color="#FF0B0B0A" />
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
 </vector>
