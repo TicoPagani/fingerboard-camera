@@ -88,6 +88,17 @@ class MainActivity : Activity() {
 
     private fun aspect() = (if (portrait) portraitAspects else landscapeAspects)[formatIdx]
     private fun effectiveFps() = if (photoMode) 30 else if (slow) 120 else fps
+
+    /**
+     * FPS da sessão da câmera. A Xiaomi só libera até 30fps no modo normal pra outros apps,
+     * então o 60 grava por baixo no modo de alta velocidade (120) e vira 60 na exportação.
+     */
+    private fun sessionFps(): Int {
+        val e = effectiveFps()
+        val lens = currentLens() ?: return e
+        if (e == 60 && !camera.supports(lens, 60) && camera.supports(lens, 120)) return 120
+        return e
+    }
     private fun currentLens(): LensOption? = if (useFront) front else lenses.getOrNull(lensIdx)
 
     // ---------- ciclo de vida ----------
@@ -222,7 +233,7 @@ class MainActivity : Activity() {
         if (!hasPermission) return
         val lens = currentLens() ?: return
         sessionReady = false
-        camera.open(lens, photoMode, effectiveFps(), st,
+        camera.open(lens, photoMode, sessionFps(), st,
             onReady = { info -> runOnUiThread { onSessionReady(lens, info) } },
             onError = { msg -> runOnUiThread { toast(msg) } })
     }
@@ -232,7 +243,7 @@ class MainActivity : Activity() {
         val rot = rotationFor(lens)
         // O Android já entrega o preview em pé na orientação natural (retrato);
         // só falta compensar o giro da tela.
-        renderer.rotation = displayDegrees()
+        renderer.rotation = (360 - displayDegrees()) % 360
         renderer.mirror = false
         val w = info.size.width.toFloat()
         val h = info.size.height.toFloat()
@@ -336,7 +347,8 @@ class MainActivity : Activity() {
             fps = 120
         } else {
             val lens = currentLens() ?: return
-            if (!camera.supports(lens, f)) { toast("Essa lente não grava em ${f}fps"); return }
+            val ok = camera.supports(lens, f) || (f == 60 && camera.supports(lens, 120))
+            if (!ok) { toast("Essa câmera não grava em ${f}fps"); return }
             fps = f
             slow = false
         }
@@ -389,7 +401,7 @@ class MainActivity : Activity() {
             slow = false
             fps = 60
         }
-        if (fps == 60 && !camera.supports(lens, 60)) fps = 30
+        if (fps == 60 && !camera.supports(lens, 60) && !camera.supports(lens, 120)) fps = 30
     }
 
     private fun toggleFish() {
@@ -439,7 +451,9 @@ class MainActivity : Activity() {
         slowChip.on = slow
         slowChip.text = if (portrait) "SLOWMO\n${if (slow) "ON" else "OFF"}" else "SLOW\n${if (slow) "ON" else "OFF"}"
         fishChip.on = fish
-        lensChip.text = if (useFront) "FRONT\nLENTE" else "${currentLens()?.label ?: "1x"}\nLENTE"
+        lensChip.text = "${lenses.getOrNull(lensIdx)?.label ?: "1x"}\nLENTE"
+        // O Poco não libera a ultra-wide pra outros apps: sem 2ª lente, o botão some.
+        lensChip.visibility = if (lenses.size >= 2 && !useFront) View.VISIBLE else View.GONE
         videoOnly.forEach { it.visibility = if (photoMode) View.GONE else View.VISIBLE }
         stylePill(modePhoto, photoMode)
         stylePill(modeVideo, !photoMode)
@@ -523,6 +537,7 @@ class MainActivity : Activity() {
         fishChip = makeIconChip("FISH") { toggleFish() }
         lensChip = makeIconChip("1x\nLENTE") { toggleLens() }
         lensChip.setOnLongClickListener { showDiagnostics(); true }
+        fishChip.setOnLongClickListener { showDiagnostics(); true }
         lockWhileRec.add(slowChip)
         lockWhileRec.add(lensChip)
         shutter = ShutterView(this).apply { setOnClickListener { shutterPressed() } }
