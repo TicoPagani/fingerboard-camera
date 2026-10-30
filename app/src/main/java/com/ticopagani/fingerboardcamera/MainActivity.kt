@@ -56,6 +56,15 @@ class MainActivity : Activity() {
     private var fps = 120
     private var slow = true
     private var slowFps = 120
+    private var focusIdx = 1
+
+    /** Foco travado como no anel da filmadora (dioptrias = 1/metros). null = autofoco. */
+    private val focusPresets = listOf<Pair<String, Float?>>(
+        "AUTO" to null,
+        "PERTO" to 6.5f,  // ~15cm: fingerboard colado na lente
+        "MÉDIO" to 2f,    // ~50cm
+        "LONGE" to 0.2f   // ~5m em diante: tudo nítido de longe
+    )
     private var fish = true
     private var lensIdx = 0
     private var useFront = false
@@ -71,6 +80,7 @@ class MainActivity : Activity() {
     private lateinit var slowChip: Chip
     private lateinit var fishChip: Chip
     private lateinit var lensChip: Chip
+    private lateinit var focusChip: Chip
     private lateinit var modePhoto: TextView
     private lateinit var modeVideo: TextView
     private lateinit var shutter: ShutterView
@@ -193,6 +203,7 @@ class MainActivity : Activity() {
         fps = prefs.getInt("fps", 120)
         slow = prefs.getBoolean("slow", true)
         slowFps = if (prefs.getInt("slowFps", 120) >= 240) 240 else 120
+        focusIdx = prefs.getInt("focus", 1).coerceIn(0, 3)
         fish = prefs.getBoolean("fish", true)
         lensIdx = prefs.getInt("lens", 0)
         useFront = prefs.getBoolean("front", false)
@@ -206,6 +217,7 @@ class MainActivity : Activity() {
             .putInt("fps", fps)
             .putBoolean("slow", slow)
             .putInt("slowFps", slowFps)
+            .putInt("focus", focusIdx)
             .putBoolean("fish", fish)
             .putInt("lens", lensIdx)
             .putBoolean("front", useFront)
@@ -236,6 +248,7 @@ class MainActivity : Activity() {
         if (!hasPermission) return
         val lens = currentLens() ?: return
         sessionReady = false
+        camera.focus = focusPresets[focusIdx].second
         camera.open(lens, photoMode, sessionFps(), st,
             onReady = { info -> runOnUiThread { onSessionReady(lens, info) } },
             onError = { msg -> runOnUiThread { toast(msg) } })
@@ -417,6 +430,13 @@ class MainActivity : Activity() {
         if (fps == 60 && !camera.supports(lens, 60) && !camera.supports(lens, 120)) fps = 30
     }
 
+    /** Funciona até gravando, como girar o anel de foco no meio da filmagem. */
+    private fun cycleFocus() {
+        focusIdx = (focusIdx + 1) % focusPresets.size
+        camera.setFocus(focusPresets[focusIdx].second)
+        saveState(); refreshUi()
+    }
+
     private fun toggleFish() {
         fish = !fish
         saveState(); applyRendererLook(); refreshUi()
@@ -461,6 +481,8 @@ class MainActivity : Activity() {
         val labels = if (portrait) portraitLabels else landscapeLabels
         formatChips.forEachIndexed { i, c -> c.on = i == formatIdx }
         fpsChips.forEachIndexed { i, c -> c.on = !slow && listOf(30, 60, 120)[i] == fps }
+        focusChip.text = "FOCO\n${focusPresets[focusIdx].first}"
+        focusChip.on = false
         slowChip.on = slow
         val slowState = if (slow) "$slowFps" else "OFF"
         slowChip.text = if (portrait) "SLOWMO\n$slowState" else "SLOW\n$slowState"
@@ -550,6 +572,7 @@ class MainActivity : Activity() {
         slowChip = makeIconChip("SLOW\nON") { toggleSlow() }.apply { dashedWhenOff = true }
         fishChip = makeIconChip("FISH") { toggleFish() }
         lensChip = makeIconChip("1x\nLENTE") { toggleLens() }
+        focusChip = makeIconChip("FOCO\nPERTO") { cycleFocus() }.apply { textSize = 9f }
         lensChip.setOnLongClickListener { showDiagnostics(); true }
         fishChip.setOnLongClickListener { showDiagnostics(); true }
         lockWhileRec.add(slowChip)
@@ -642,6 +665,7 @@ class MainActivity : Activity() {
         right.addView(vert, lp(dp(52), dp(44)))
         spacer()
         right.addView(lensChip, lp(dp(52), dp(44)))
+        right.addView(focusChip, lp(dp(52), dp(44)))
         spacer()
         val flipL = makeIconChip("⟲\nFRONT") { toggleFront() }
         lockWhileRec.add(flipL)
@@ -675,6 +699,7 @@ class MainActivity : Activity() {
         val title = label("FINGERBOARD CAMERA", 13f, Pal.FG, true)
         top.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
         top.addView(lensChip, lp(dp(52), dp(44)).apply { marginStart = dp(6) })
+        top.addView(focusChip, lp(dp(52), dp(44)).apply { marginStart = dp(6) })
         top.addView(fishChip, lp(dp(52), dp(44)).apply { marginStart = dp(6) })
         val horiz = makeIconChip("HORIZ") { toggleOrientation() }
         lockWhileRec.add(horiz)

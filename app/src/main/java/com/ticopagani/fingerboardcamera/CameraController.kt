@@ -161,6 +161,13 @@ class CameraController(private val context: Context) {
                     else -> "externa"
                 }
                 appendLine("Câmera $id · $facing · focal ${"%.2f".format(Locale.US, focal(id))}mm · sensor ${sensorOrientation(id)}°")
+                val minF = c.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE) ?: 0f
+                val cal = when (c.get(CameraCharacteristics.LENS_INFO_FOCUS_DISTANCE_CALIBRATION)) {
+                    CameraMetadata.LENS_INFO_FOCUS_DISTANCE_CALIBRATION_CALIBRATED -> "calibrado"
+                    CameraMetadata.LENS_INFO_FOCUS_DISTANCE_CALIBRATION_APPROXIMATE -> "aproximado"
+                    else -> "sem calibração"
+                }
+                appendLine("  foco manual: ${if (minF > 0f) "até %.1f dioptrias (~%.0fcm), $cal".format(Locale.US, minF, 100f / minF) else "fixo / não liberado"}")
                 val caps = c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES) ?: intArrayOf()
                 val names = caps.toList().mapNotNull {
                     when (it) {
@@ -282,12 +289,37 @@ class CameraController(private val context: Context) {
         }
     }
 
+    /**
+     * Foco travado em dioptrias (1 / metros), como o anel manual de uma filmadora:
+     * null = autofoco contínuo.
+     */
+    @Volatile var focus: Float? = null
+
+    fun setFocus(diopters: Float?) {
+        focus = diopters
+        handler.post {
+            try { startRepeating(recorder != null) } catch (_: Exception) {}
+        }
+    }
+
+    private fun applyFocus(b: CaptureRequest.Builder, id: String, photo: Boolean) {
+        val c = chars(id)
+        val min = c.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE) ?: 0f
+        val f = focus
+        if (f != null && min > 0f) {
+            b.set(CaptureRequest.CONTROL_AF_MODE, CameraMetadata.CONTROL_AF_MODE_OFF)
+            b.set(CaptureRequest.LENS_FOCUS_DISTANCE, f.coerceIn(0f, min))
+        } else {
+            val af = c.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES) ?: intArrayOf()
+            val want = if (photo) CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE else CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_VIDEO
+            if (af.contains(want)) b.set(CaptureRequest.CONTROL_AF_MODE, want)
+        }
+    }
+
     private fun applyCommon(b: CaptureRequest.Builder, ln: LensOption, photo: Boolean) {
         if (Build.VERSION.SDK_INT >= 30 && ln.zoom != 1f) b.set(CaptureRequest.CONTROL_ZOOM_RATIO, ln.zoom)
-        val af = chars(ln.cameraId).get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES) ?: intArrayOf()
-        val want = if (photo) CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE else CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_VIDEO
-        if (af.contains(want)) b.set(CaptureRequest.CONTROL_AF_MODE, want)
         b.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+        applyFocus(b, ln.cameraId, photo)
     }
 
     private fun startRepeating(withRecorder: Boolean) {
@@ -300,6 +332,7 @@ class CameraController(private val context: Context) {
         if (withRecorder) b.addTarget(recorderSurface!!)
         if (inf.highSpeed) {
             b.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(inf.fps, inf.fps))
+            applyFocus(b, ln.cameraId, false)
             val list = (s as CameraConstrainedHighSpeedCaptureSession).createHighSpeedRequestList(b.build())
             s.setRepeatingBurst(list, null, handler)
         } else {
