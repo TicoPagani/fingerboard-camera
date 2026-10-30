@@ -153,6 +153,7 @@ class EditorActivity : Activity() {
     // ---------- reprodução com o slow ao vivo ----------
 
     private fun startPlayer(st: SurfaceTexture) {
+        if (isFinishing || isDestroyed) return
         releasePlayer()
         val s = Surface(st)
         playerSurface = s
@@ -313,6 +314,13 @@ class EditorActivity : Activity() {
             val c = Chip(this, t).apply {
                 textSize = 11f
                 setOnClickListener { mult = speeds[i]; refresh() }
+                setOnTouchListener { _, e ->
+                    if (e.actionMasked == android.view.MotionEvent.ACTION_DOWN && mult != speeds[i]) {
+                        mult = speeds[i]
+                        refresh()
+                    }
+                    false
+                }
             }
             speedChips.add(c)
             row.addView(c, LinearLayout.LayoutParams(0, dp(50), 1f).apply { if (i > 0) marginStart = dp(6) })
