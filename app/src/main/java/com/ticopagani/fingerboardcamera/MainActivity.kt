@@ -55,6 +55,7 @@ class MainActivity : Activity() {
     private var formatIdx = 1
     private var fps = 120
     private var slow = true
+    private var slowFps = 120
     private var fish = true
     private var lensIdx = 0
     private var useFront = false
@@ -87,7 +88,7 @@ class MainActivity : Activity() {
     private val portraitAspects = listOf(9f / 16f, 3f / 4f, 1f)
 
     private fun aspect() = (if (portrait) portraitAspects else landscapeAspects)[formatIdx]
-    private fun effectiveFps() = if (photoMode) 30 else if (slow) 120 else fps
+    private fun effectiveFps() = if (photoMode) 30 else if (slow) slowFps else fps
 
     /**
      * FPS da sessão da câmera. A Xiaomi só libera até 30fps no modo normal pra outros apps,
@@ -191,6 +192,7 @@ class MainActivity : Activity() {
         formatIdx = prefs.getInt("format", 1).coerceIn(0, 2)
         fps = prefs.getInt("fps", 120)
         slow = prefs.getBoolean("slow", true)
+        slowFps = if (prefs.getInt("slowFps", 120) >= 240) 240 else 120
         fish = prefs.getBoolean("fish", true)
         lensIdx = prefs.getInt("lens", 0)
         useFront = prefs.getBoolean("front", false)
@@ -203,6 +205,7 @@ class MainActivity : Activity() {
             .putInt("format", formatIdx)
             .putInt("fps", fps)
             .putBoolean("slow", slow)
+            .putInt("slowFps", slowFps)
             .putBoolean("fish", fish)
             .putInt("lens", lensIdx)
             .putBoolean("front", useFront)
@@ -295,7 +298,7 @@ class MainActivity : Activity() {
         val lens = currentLens() ?: return
         if (!sessionReady) return
         busy = true
-        val file = Clips.newFile(this, aspect(), slow)
+        val file = Clips.newFile(this, aspect(), if (slow) slowFps else 0)
         camera.startRecording(file, rotationFor(lens)) { ok, err ->
             runOnUiThread {
                 busy = false
@@ -343,8 +346,9 @@ class MainActivity : Activity() {
 
     private fun pickFps(f: Int) {
         if (f == 120) {
-            if (!ensureHighSpeedLens()) return
+            if (!ensureHighSpeedLens(120)) return
             fps = 120
+            if (slow) slowFps = 120
         } else {
             val lens = currentLens() ?: return
             val ok = camera.supports(lens, f) || (f == 60 && camera.supports(lens, 120))
@@ -355,24 +359,32 @@ class MainActivity : Activity() {
         saveState(); refreshUi(); reopenCamera()
     }
 
+    /** Cada toque: OFF → 120 → 240 → OFF (pula o 240 se a câmera atual não tiver). */
     private fun toggleSlow() {
-        if (slow) {
-            slow = false
-        } else {
-            if (!ensureHighSpeedLens()) return
-            slow = true
-            fps = 120
+        val lens = currentLens()
+        when {
+            !slow -> {
+                if (!ensureHighSpeedLens(120)) return
+                slow = true
+                slowFps = 120
+                fps = 120
+            }
+            slowFps == 120 && lens != null && camera.supports(lens, 240) -> slowFps = 240
+            else -> {
+                slow = false
+                slowFps = 120
+            }
         }
         saveState(); refreshUi(); reopenCamera()
     }
 
-    /** 120fps só existe na lente principal: troca pra ela se precisar. */
-    private fun ensureHighSpeedLens(): Boolean {
+    /** Alta velocidade só existe em algumas câmeras: troca pra uma que tenha, se precisar. */
+    private fun ensureHighSpeedLens(want: Int): Boolean {
         val lens = currentLens()
-        if (lens != null && camera.supports(lens, 120)) return true
-        val idx = lenses.indexOfFirst { camera.supports(it, 120) }
+        if (lens != null && camera.supports(lens, want)) return true
+        val idx = lenses.indexOfFirst { camera.supports(it, want) }
         if (idx < 0) {
-            toast("Esse celular não libera 120fps pra outros apps")
+            toast("Esse celular não libera ${want}fps pra outros apps")
             return false
         }
         useFront = false
@@ -397,6 +409,7 @@ class MainActivity : Activity() {
 
     private fun fitFpsToLens() {
         val lens = currentLens() ?: return
+        if (slow && slowFps == 240 && !camera.supports(lens, 240)) slowFps = 120
         if (effectiveFps() >= 120 && !camera.supports(lens, 120)) {
             slow = false
             fps = 60
@@ -447,9 +460,10 @@ class MainActivity : Activity() {
     private fun refreshUi() {
         val labels = if (portrait) portraitLabels else landscapeLabels
         formatChips.forEachIndexed { i, c -> c.on = i == formatIdx }
-        fpsChips.forEachIndexed { i, c -> c.on = listOf(30, 60, 120)[i] == (if (slow) 120 else fps) }
+        fpsChips.forEachIndexed { i, c -> c.on = !slow && listOf(30, 60, 120)[i] == fps }
         slowChip.on = slow
-        slowChip.text = if (portrait) "SLOWMO\n${if (slow) "ON" else "OFF"}" else "SLOW\n${if (slow) "ON" else "OFF"}"
+        val slowState = if (slow) "$slowFps" else "OFF"
+        slowChip.text = if (portrait) "SLOWMO\n$slowState" else "SLOW\n$slowState"
         fishChip.on = fish
         lensChip.text = "${lenses.getOrNull(lensIdx)?.label ?: "1x"}\nLENTE"
         // O Poco não libera a ultra-wide pra outros apps: sem 2ª lente, o botão some.
@@ -475,7 +489,7 @@ class MainActivity : Activity() {
             statusText.setTextColor(if (recording) Pal.REC else Pal.FG)
             val e = effectiveFps()
             if (slow) {
-                badgeText.text = "120 FPS · SLOWMO"
+                badgeText.text = "$slowFps FPS · SLOWMO"
                 badgeText.background = roundRect(this, Pal.ACCENT, null, 4)
                 badgeText.setTextColor(Pal.BG)
             } else {

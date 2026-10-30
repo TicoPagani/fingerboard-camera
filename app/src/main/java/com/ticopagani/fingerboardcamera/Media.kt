@@ -19,15 +19,24 @@ import kotlin.math.sqrt
 
 /** Clipes gravados ficam na pasta do app até serem exportados. O nome guarda o formato e se foi em slow. */
 object Clips {
-    data class Meta(val aspect: Float, val slow: Boolean)
+    /** slowFps: 0 = gravado sem slow; 120 ou 240 = gravado com SLOWMO nesse fps. */
+    data class Meta(val aspect: Float, val slowFps: Int) {
+        val slow get() = slowFps > 0
+    }
 
     fun dir(ctx: Context): File =
         (ctx.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: File(ctx.filesDir, "clips")).also { it.mkdirs() }
 
     fun stamp(): String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
 
-    fun newFile(ctx: Context, aspect: Float, slow: Boolean): File =
-        File(dir(ctx), "FBC_${stamp()}_${(aspect * 1000).roundToInt()}_${if (slow) "s" else "n"}.mp4")
+    fun newFile(ctx: Context, aspect: Float, slowFps: Int): File {
+        val tag = when {
+            slowFps >= 240 -> "t"
+            slowFps > 0 -> "s"
+            else -> "n"
+        }
+        return File(dir(ctx), "FBC_${stamp()}_${(aspect * 1000).roundToInt()}_$tag.mp4")
+    }
 
     fun last(ctx: Context): File? =
         dir(ctx).listFiles { f -> f.name.endsWith(".mp4") && f.length() > 0 }?.maxByOrNull { it.lastModified() }
@@ -35,7 +44,12 @@ object Clips {
     fun meta(f: File): Meta {
         val parts = f.nameWithoutExtension.split("_")
         val a = parts.getOrNull(3)?.toIntOrNull()?.let { it / 1000f } ?: (16f / 9f)
-        return Meta(a, parts.getOrNull(4) == "s")
+        val slowFps = when (parts.getOrNull(4)) {
+            "t" -> 240
+            "s" -> 120
+            else -> 0
+        }
+        return Meta(a, slowFps)
     }
 }
 

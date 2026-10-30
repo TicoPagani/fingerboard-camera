@@ -60,7 +60,7 @@ class EditorActivity : Activity() {
     private lateinit var exportBtn: Chip
     private lateinit var playBtn: Chip
     private val speedChips = mutableListOf<Chip>()
-    private val speeds = listOf(1, 2, 4)
+    private var speeds = listOf(1, 2, 4)
 
     private val ui = Handler(Looper.getMainLooper())
     private val portrait get() = meta.aspect < 1f
@@ -71,7 +71,13 @@ class EditorActivity : Activity() {
         if (path == null || !File(path).exists()) { finish(); return }
         file = File(path)
         meta = Clips.meta(file)
-        mult = if (meta.slow) 4 else 1
+        // Clipe em 240 ganha a opção 8x (0.125x), que ainda sai a 30fps lisinho.
+        if (meta.slowFps >= 240) speeds = listOf(1, 2, 4, 8)
+        mult = when {
+            meta.slowFps >= 240 -> 8
+            meta.slow -> 4
+            else -> 1
+        }
         requestedOrientation = if (portrait) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
@@ -184,7 +190,7 @@ class EditorActivity : Activity() {
 
     private fun refresh() {
         speedChips.forEachIndexed { i, c -> c.on = speeds[i] == mult }
-        val sLabel = when (mult) { 2 -> "0.5x"; 4 -> "0.25x"; else -> "1x" }
+        val sLabel = when (mult) { 2 -> "0.5x"; 4 -> "0.25x"; 8 -> "0.125x"; else -> "1x" }
         slider.highlight = mult > 1
         slider.label = "SLOW $sLabel"
         val a = slider.start * durationSec
@@ -269,7 +275,15 @@ class EditorActivity : Activity() {
         box.addView(label("Velocidade do trecho em slow", 12f, Pal.FG))
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         speedChips.clear()
-        val texts = listOf("1x\nsem slow", "0.5x\n2x mais lento", "0.25x\n4x mais lento")
+        val compact = speeds.size > 3
+        val texts = speeds.map { m ->
+            when (m) {
+                1 -> if (compact) "1x\nnormal" else "1x\nsem slow"
+                2 -> if (compact) "0.5x\n2x" else "0.5x\n2x mais lento"
+                4 -> if (compact) "0.25x\n4x" else "0.25x\n4x mais lento"
+                else -> "0.125x\n8x"
+            }
+        }
         texts.forEachIndexed { i, t ->
             val c = Chip(this, t).apply {
                 textSize = 11f

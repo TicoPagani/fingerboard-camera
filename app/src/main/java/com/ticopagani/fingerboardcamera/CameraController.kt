@@ -99,14 +99,14 @@ class CameraController(private val context: Context) {
         return LensOption(id, 1f, "FRONT", front = true)
     }
 
-    fun highSpeedSize(id: String): Size? = try {
+    fun highSpeedSize(id: String, fps: Int = 120): Size? = try {
         val c = chars(id)
         val caps = c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES) ?: intArrayOf()
         if (!caps.contains(CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_CONSTRAINED_HIGH_SPEED_VIDEO)) null
         else {
             val map = c.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!
             val ok = map.highSpeedVideoSizes.filter { s ->
-                try { map.getHighSpeedVideoFpsRangesFor(s).any { it.upper == 120 } } catch (e: Exception) { false }
+                try { map.getHighSpeedVideoFpsRangesFor(s).any { it.lower == fps && it.upper == fps } } catch (e: Exception) { false }
             }
             ok.firstOrNull { it.width == 1920 && it.height == 1080 }
                 ?: ok.filter { it.width <= 1920 }.maxByOrNull { it.width * it.height }
@@ -114,7 +114,7 @@ class CameraController(private val context: Context) {
     } catch (e: Exception) { null }
 
     fun supports(lens: LensOption, fps: Int): Boolean {
-        if (fps >= 120) return !lens.front && lens.zoom == 1f && highSpeedSize(lens.cameraId) != null
+        if (fps >= 120) return lens.zoom == 1f && highSpeedSize(lens.cameraId, fps) != null
         val ranges = (try { chars(lens.cameraId).get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES) } catch (e: Exception) { null })
             ?: return fps <= 30
         return ranges.any { it.upper >= fps }
@@ -213,7 +213,7 @@ class CameraController(private val context: Context) {
             try {
                 val high = !photo && fps >= 120
                 val size = if (high) {
-                    highSpeedSize(lens.cameraId) ?: throw IllegalStateException("120fps indisponível nesta lente")
+                    highSpeedSize(lens.cameraId, fps) ?: throw IllegalStateException("${fps}fps indisponível nesta câmera")
                 } else videoSize(lens.cameraId)
                 st.setDefaultBufferSize(size.width, size.height)
                 previewSurface = Surface(st)
@@ -299,7 +299,7 @@ class CameraController(private val context: Context) {
         b.addTarget(previewSurface!!)
         if (withRecorder) b.addTarget(recorderSurface!!)
         if (inf.highSpeed) {
-            b.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(120, 120))
+            b.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(inf.fps, inf.fps))
             val list = (s as CameraConstrainedHighSpeedCaptureSession).createHighSpeedRequestList(b.build())
             s.setRepeatingBurst(list, null, handler)
         } else {
@@ -315,7 +315,13 @@ class CameraController(private val context: Context) {
         r.setVideoSource(MediaRecorder.VideoSource.SURFACE)
         r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
         r.setOutputFile(file.absolutePath)
-        r.setVideoEncodingBitRate(if (inf.highSpeed) 50_000_000 else 24_000_000)
+        r.setVideoEncodingBitRate(
+            when {
+                inf.fps >= 240 -> 80_000_000
+                inf.highSpeed -> 50_000_000
+                else -> 24_000_000
+            }
+        )
         r.setVideoFrameRate(inf.fps)
         r.setVideoSize(inf.size.width, inf.size.height)
         r.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
