@@ -295,7 +295,7 @@ class CameraController(private val context: Context) {
      */
     @Volatile var focus: Float? = null
 
-    fun setFocus(diopters: Float?) {
+    fun changeFocus(diopters: Float?) {
         focus = diopters
         handler.post {
             try { startRepeating(recorder != null) } catch (_: Exception) {}

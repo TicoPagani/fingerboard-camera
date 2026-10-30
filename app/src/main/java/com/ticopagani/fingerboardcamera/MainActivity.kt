@@ -433,7 +433,7 @@ class MainActivity : Activity() {
     /** Funciona até gravando, como girar o anel de foco no meio da filmagem. */
     private fun cycleFocus() {
         focusIdx = (focusIdx + 1) % focusPresets.size
-        camera.setFocus(focusPresets[focusIdx].second)
+        camera.changeFocus(focusPresets[focusIdx].second)
         saveState(); refreshUi()
     }
 
