@@ -101,6 +101,8 @@ class VideoExporter(private val ctx: Context) {
         st.setOnFrameAvailableListener({ frames.release() }, Handler(listenerThread.looper))
         val decSurface = Surface(st)
 
+        // O decoder gira o quadro sozinho ao desenhar na Surface.
+        inFmt.setInteger(MediaFormat.KEY_ROTATION, rotation)
         val decoder = MediaCodec.createDecoderByType(inFmt.getString(MediaFormat.KEY_MIME)!!)
         decoder.configure(inFmt, decSurface, null, 0)
         decoder.start()
@@ -190,7 +192,7 @@ class VideoExporter(private val ctx: Context) {
                             GLES20.glViewport(0, 0, outW, outH)
                             GLES20.glClearColor(0f, 0f, 0f, 1f)
                             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-                            gl.draw(tex, FisheyeGl.texMatrix(stM, rotation, false), cx, cy, p.aspect, p.k, p.vig)
+                            gl.draw(tex, FisheyeGl.texMatrix(stM, 0, false), cx, cy, p.aspect, p.k, p.vig)
                             egl.setPresentationTime(outPts * 1000)
                             egl.swap()
                             lastOut = outPts

@@ -230,8 +230,10 @@ class MainActivity : Activity() {
     private fun onSessionReady(lens: LensOption, info: SessionInfo) {
         sessionReady = true
         val rot = rotationFor(lens)
-        renderer.rotation = rot
-        renderer.mirror = lens.front
+        // O Android já entrega o preview em pé na orientação natural (retrato);
+        // só falta compensar o giro da tela.
+        renderer.rotation = displayDegrees()
+        renderer.mirror = false
         val w = info.size.width.toFloat()
         val h = info.size.height.toFloat()
         renderer.srcAspect = if (rot % 180 != 0) h / w else w / h
@@ -603,7 +605,7 @@ class MainActivity : Activity() {
         val right = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(0, dp(12), 0, dp(12))
+            setPadding(0, dp(8), 0, dp(8))
         }
         fun spacer() = right.addView(Space(this), LinearLayout.LayoutParams(1, 0, 1f))
         val vert = makeIconChip("VERT") { toggleOrientation() }
@@ -612,12 +614,16 @@ class MainActivity : Activity() {
         spacer()
         right.addView(lensChip, lp(dp(52), dp(44)))
         spacer()
-        right.addView(fishChip, lp(dp(52), dp(48)))
+        val flipL = makeIconChip("⟲\nFRONT") { toggleFront() }
+        lockWhileRec.add(flipL)
+        right.addView(flipL, lp(dp(52), dp(44)))
         spacer()
-        right.addView(slowChip, lp(dp(52), dp(48)))
+        right.addView(fishChip, lp(dp(52), dp(44)))
+        spacer()
+        right.addView(slowChip, lp(dp(52), dp(44)))
         videoOnly.add(slowChip)
         spacer()
-        right.addView(shutter, lp(dp(64), dp(64)))
+        right.addView(shutter, lp(dp(60), dp(60)))
         spacer()
         right.addView(galleryBtn, lp(dp(46), dp(46)))
         root.addView(right, lp(dp(75), -1))

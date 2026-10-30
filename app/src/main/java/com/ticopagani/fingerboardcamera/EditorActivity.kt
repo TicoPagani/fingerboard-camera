@@ -98,7 +98,8 @@ class EditorActivity : Activity() {
             preserveEGLContextOnPause = false
         }
         renderer = FisheyeRenderer(glView) { st -> startPlayer(st) }
-        renderer.rotation = rotation
+        // O player já aplica a rotação gravada no arquivo.
+        renderer.rotation = 0
         renderer.srcAspect = if (rotation % 180 != 0) vh.toFloat() / vw else vw.toFloat() / vh
         renderer.outAspect = meta.aspect
         glView.setRenderer(renderer)
