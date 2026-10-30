@@ -71,6 +71,7 @@ class MainActivity : Activity() {
     private var recording = false
     private var busy = false
     private var recStart = 0L
+    private var current: Clips.Recording? = null
 
     // views
     private val formatChips = mutableListOf<Chip>()
@@ -146,6 +147,10 @@ class MainActivity : Activity() {
         hasPermission = checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         if (!hasPermission) requestPermissions(arrayOf(Manifest.permission.CAMERA), 1)
         if (lenses.isEmpty()) toast("Nenhuma câmera traseira encontrada")
+        Thread {
+            Clips.migrateOld(this)
+            runOnUiThread { refreshThumb() }
+        }.start()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -311,15 +316,24 @@ class MainActivity : Activity() {
         val lens = currentLens() ?: return
         if (!sessionReady) return
         busy = true
-        val file = Clips.newFile(this, aspect(), if (slow) slowFps else 0)
-        camera.startRecording(file, rotationFor(lens)) { ok, err ->
+        val rec = Clips.create(this, aspect(), if (slow) slowFps else 0)
+        if (rec == null) {
+            busy = false
+            toast("Não consegui criar o vídeo na galeria")
+            return
+        }
+        camera.startRecording(rec.fd, rotationFor(lens)) { ok, err ->
             runOnUiThread {
                 busy = false
                 if (ok) {
+                    current = rec
                     recording = true
                     recStart = SystemClock.elapsedRealtime()
                     ui.post(tick)
-                } else toast("Não deu pra gravar: $err")
+                } else {
+                    Clips.finish(this, rec, false)
+                    toast("Não deu pra gravar: $err")
+                }
                 refreshUi()
             }
         }
@@ -327,12 +341,14 @@ class MainActivity : Activity() {
 
     private fun stopRecording() {
         busy = true
-        camera.stopRecording { file ->
+        camera.stopRecording { ok ->
+            current?.let { Clips.finish(this, it, ok) }
+            current = null
             runOnUiThread {
                 busy = false
                 recording = false
                 ui.removeCallbacks(tick)
-                if (file == null) toast("O clipe ficou curto demais e foi descartado")
+                if (!ok) toast("O clipe ficou curto demais e foi descartado")
                 refreshUi()
                 refreshThumb()
             }
@@ -456,9 +472,9 @@ class MainActivity : Activity() {
 
     private fun openEditor() {
         if (recording) return
-        val f = Clips.last(this)
-        if (f == null) { toast("Nenhum vídeo gravado ainda"); return }
-        startActivity(Intent(this, EditorActivity::class.java).putExtra(EditorActivity.EXTRA_PATH, f.absolutePath))
+        val u = Clips.last(this)
+        if (u == null) { toast("Nenhum vídeo gravado ainda"); return }
+        startActivity(Intent(this, EditorActivity::class.java).setData(u))
     }
 
     private fun showDiagnostics() {
@@ -529,8 +545,12 @@ class MainActivity : Activity() {
 
     private fun refreshThumb() {
         Thread {
-            val f = Clips.last(this) ?: return@Thread
-            val bmp = (try { ThumbnailUtils.createVideoThumbnail(f, Size(160, 160), null) } catch (e: Exception) { null })
+            val u = Clips.last(this)
+            if (u == null) {
+                runOnUiThread { galleryBtn.background = roundRect(this, 0xFF3A3832.toInt(), Pal.LINE, 8) }
+                return@Thread
+            }
+            val bmp = (try { contentResolver.loadThumbnail(u, Size(160, 160), null) } catch (e: Exception) { null })
                 ?: return@Thread
             runOnUiThread { galleryBtn.background = BitmapDrawable(resources, bmp) }
         }.start()

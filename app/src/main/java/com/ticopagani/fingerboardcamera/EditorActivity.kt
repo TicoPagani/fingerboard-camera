@@ -3,6 +3,9 @@
 package com.ticopagani.fingerboardcamera
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.provider.MediaStore
 import android.content.pm.ActivityInfo
 import android.content.res.ColorStateList
 import android.graphics.SurfaceTexture
@@ -33,11 +36,13 @@ import java.util.Locale
 class EditorActivity : Activity() {
 
     companion object {
-        const val EXTRA_PATH = "path"
+        private const val PICK = 7
     }
 
-    private lateinit var file: File
+    private lateinit var uri: Uri
     private lateinit var meta: Clips.Meta
+    private var aspect = 16f / 9f
+    private var ownClip = false
     private lateinit var glView: GLSurfaceView
     private lateinit var renderer: FisheyeRenderer
     private var player: MediaPlayer? = null
@@ -63,41 +68,57 @@ class EditorActivity : Activity() {
     private var speeds = listOf(1, 2, 4)
 
     private val ui = Handler(Looper.getMainLooper())
-    private val portrait get() = meta.aspect < 1f
+    private val portrait get() = aspect < 1f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val path = intent.getStringExtra(EXTRA_PATH)
-        if (path == null || !File(path).exists()) { finish(); return }
-        file = File(path)
-        meta = Clips.meta(file)
-        // Clipe em 240 ganha a opção 8x (0.125x), que ainda sai a 30fps lisinho.
-        if (meta.slowFps >= 240) speeds = listOf(1, 2, 4, 8)
-        mult = when {
-            meta.slowFps >= 240 -> 8
-            meta.slow -> 4
-            else -> 1
-        }
-        requestedOrientation = if (portrait) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        uri = intent.data ?: run { finish(); return }
+        val name = Clips.displayName(this, uri)
+        meta = Clips.meta(name)
+        ownClip = name?.startsWith("FBC_") == true
 
         var rotation = 0
         var vw = 1920
         var vh = 1080
+        var measuredFps = 30.0
         val r = MediaMetadataRetriever()
         try {
-            r.setDataSource(path)
+            r.setDataSource(this, uri)
             rotation = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
             vw = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: vw
             vh = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: vh
             durationMs = (r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toIntOrNull() ?: 1000).coerceAtLeast(1)
             val frames = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toIntOrNull()
-            if (frames != null) fpsInfo = " · ${((frames * 1000.0 / durationMs) / 10).let { Math.round(it) * 10 }}fps"
+            if (frames != null) {
+                measuredFps = frames * 1000.0 / durationMs
+                fpsInfo = " · ${Math.round(measuredFps / 10) * 10}fps"
+            }
         } catch (_: Exception) {
+            toast("Não consegui ler esse vídeo")
+            finish()
+            return
         } finally {
             r.release()
         }
         durationSec = durationMs / 1000.0
+        val srcAspect = if (rotation % 180 != 0) vh.toFloat() / vw else vw.toFloat() / vh
+        aspect = meta.aspect ?: srcAspect
+        // Vídeo de fora do app: decide o slow pelo fps real do arquivo.
+        val slowFps = if (ownClip) meta.slowFps else when {
+            measuredFps >= 200 -> 240
+            measuredFps >= 100 -> 120
+            else -> 0
+        }
+
+        // Clipe em 240 ganha a opção 8x (0.125x), que ainda sai a 30fps lisinho.
+        if (slowFps >= 240) speeds = listOf(1, 2, 4, 8)
+        mult = when {
+            slowFps >= 240 -> 8
+            slowFps > 0 -> 4
+            else -> 1
+        }
+        requestedOrientation = if (portrait) ActivityInfo.SCREEN_ORIENTATION_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         glView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
@@ -106,8 +127,8 @@ class EditorActivity : Activity() {
         renderer = FisheyeRenderer(glView) { st -> startPlayer(st) }
         // O player já aplica a rotação gravada no arquivo.
         renderer.rotation = 0
-        renderer.srcAspect = if (rotation % 180 != 0) vh.toFloat() / vw else vw.toFloat() / vh
-        renderer.outAspect = meta.aspect
+        renderer.srcAspect = srcAspect
+        renderer.outAspect = aspect
         glView.setRenderer(renderer)
         glView.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
 
@@ -136,7 +157,7 @@ class EditorActivity : Activity() {
         playerSurface = s
         val mp = MediaPlayer()
         try {
-            mp.setDataSource(file.absolutePath)
+            mp.setDataSource(this, uri)
             mp.setSurface(s)
             mp.isLooping = true
             mp.setOnPreparedListener {
@@ -210,24 +231,27 @@ class EditorActivity : Activity() {
         exportBtn.isEnabled = false
         exportBtn.text = "EXPORTANDO 0%"
         val params = VideoExporter.Params(
-            aspect = meta.aspect,
+            aspect = aspect,
             k = FisheyeGl.strengthFromPercent(fishPct),
             vig = vigPct / 100f,
             slowStartSec = slider.start * durationSec,
             slowEndSec = slider.end * durationSec,
             mult = mult
         )
-        val keep = keepOrig
+        val keep = keepOrig || !ownClip
         Thread {
             try {
-                val out = VideoExporter(this).export(file, params) { f ->
+                val out = VideoExporter(this).export(uri, params) { f ->
                     ui.post { exportBtn.text = "EXPORTANDO ${(f * 100).toInt()}%" }
                 }
                 val stamp = Clips.stamp()
                 Gallery.saveVideo(this, out, "FingerboardCamera_$stamp.mp4")
                 out.delete()
-                if (keep) Gallery.saveVideo(this, file, "FingerboardCamera_${stamp}_original.mp4")
-                ui.post { toast("Salvo em Filmes › FingerboardCamera") }
+                val removed = !keep && Clips.delete(this, uri)
+                ui.post {
+                    toast(if (removed) "Salvo em Filmes › FingerboardCamera (original apagado)" else "Salvo em Filmes › FingerboardCamera")
+                    if (removed) finish()
+                }
             } catch (e: Throwable) {
                 ui.post { toast("Erro ao exportar: ${e.message}") }
             } finally {
@@ -297,11 +321,12 @@ class EditorActivity : Activity() {
     }
 
     private fun keepBox(): CheckBox = CheckBox(this).apply {
-        text = "Também salvar o original sem efeito"
+        text = "Manter o original (sem efeito) na galeria"
         textSize = 12f
         setTextColor(Pal.FG)
         typeface = MONO
         isChecked = keepOrig
+        visibility = if (ownClip) View.VISIBLE else View.GONE
         buttonTintList = ColorStateList.valueOf(Pal.ACCENT)
         setOnCheckedChangeListener { _, c -> keepOrig = c }
     }
@@ -340,6 +365,14 @@ class EditorActivity : Activity() {
             setOnClickListener { finish() }
         }
         bar.addView(back)
+        val pick = Chip(this, "CLIPES").apply {
+            radiusDp = 8
+            textSize = 11f
+            setPadding(dp(10), 0, dp(10), 0)
+            contentDescription = "Abrir outro clipe da galeria"
+            setOnClickListener { pickClip() }
+        }
+        bar.addView(pick, lp(-2, dp(40)).apply { marginStart = dp(10) })
         bar.addView(label("EDITAR CLIPE", 15f, Pal.FG, true), lp(-2, -2).apply { marginStart = dp(14) })
         bar.addView(
             label(String.format(Locale.US, "%.1fs%s", durationSec, fpsInfo), 11f, Pal.MUTED),
@@ -418,6 +451,26 @@ class EditorActivity : Activity() {
         panel.addView(exportBtn, lp(-1, dp(52)).apply { topMargin = dp(10) })
         root.addView(panel, lp(-1, -2))
         return root
+    }
+
+    /** Abre o seletor da galeria pra escolher qualquer clipe já gravado. */
+    private fun pickClip() {
+        if (exporting) return
+        val i = Intent(MediaStore.ACTION_PICK_IMAGES).setType("video/*")
+        try {
+            startActivityForResult(i, PICK)
+        } catch (e: Exception) {
+            startActivityForResult(Intent(Intent.ACTION_GET_CONTENT).setType("video/*"), PICK)
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        val u = data?.data
+        if (requestCode == PICK && resultCode == RESULT_OK && u != null) {
+            startActivity(Intent(this, EditorActivity::class.java).setData(u).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+            finish()
+        }
     }
 
     private fun hideSystemUi() {

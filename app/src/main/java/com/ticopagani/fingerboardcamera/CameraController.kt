@@ -19,6 +19,7 @@ import android.media.MediaRecorder
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.ParcelFileDescriptor
 import android.util.Range
 import android.util.Size
 import android.view.Surface
@@ -50,7 +51,6 @@ class CameraController(private val context: Context) {
     private var imageReader: ImageReader? = null
     private var info: SessionInfo? = null
     private var lens: LensOption? = null
-    private var recordFile: File? = null
     @Volatile private var openToken = 0
 
     // ---------- Descoberta de lentes e capacidades ----------
@@ -342,12 +342,15 @@ class CameraController(private val context: Context) {
         }
     }
 
-    private fun buildRecorder(file: File, hint: Int): MediaRecorder {
+    private fun buildRecorder(file: File, hint: Int): MediaRecorder =
+        buildRecorder(hint) { it.setOutputFile(file.absolutePath) }
+
+    private fun buildRecorder(hint: Int, output: (MediaRecorder) -> Unit): MediaRecorder {
         val inf = info!!
         val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else MediaRecorder()
         r.setVideoSource(MediaRecorder.VideoSource.SURFACE)
         r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-        r.setOutputFile(file.absolutePath)
+        output(r)
         r.setVideoEncodingBitRate(
             when {
                 inf.fps >= 240 -> 80_000_000
@@ -363,39 +366,36 @@ class CameraController(private val context: Context) {
         return r
     }
 
-    fun startRecording(file: File, orientationHint: Int, done: (Boolean, String?) -> Unit) {
+    /** Grava direto num arquivo da galeria (descritor aberto pelo MediaStore). */
+    fun startRecording(fd: ParcelFileDescriptor, orientationHint: Int, done: (Boolean, String?) -> Unit) {
         handler.post {
             try {
-                val r = buildRecorder(file, orientationHint)
+                val r = buildRecorder(orientationHint) { it.setOutputFile(fd.fileDescriptor) }
                 r.prepare()
                 recorder = r
-                recordFile = file
                 startRepeating(true)
                 r.start()
                 done(true, null)
             } catch (e: Exception) {
                 try { recorder?.release() } catch (_: Exception) {}
                 recorder = null
-                file.delete()
                 try { startRepeating(false) } catch (_: Exception) {}
                 done(false, e.message)
             }
         }
     }
 
-    fun stopRecording(done: (File?) -> Unit) {
+    /** Para a gravação; devolve false se o clipe ficou inválido (curto demais). */
+    fun stopRecording(done: (Boolean) -> Unit) {
         handler.post {
             val r = recorder
-            if (r == null) { done(null); return@post }
+            if (r == null) { done(false); return@post }
             var ok = true
             try { r.stop() } catch (e: RuntimeException) { ok = false }
             try { r.release() } catch (_: Exception) {}
             recorder = null
             try { startRepeating(false) } catch (_: Exception) {}
-            val f = recordFile
-            recordFile = null
-            if (!ok) f?.delete()
-            done(if (ok) f else null)
+            done(ok)
         }
     }
 
@@ -434,7 +434,6 @@ class CameraController(private val context: Context) {
         try { recorder?.stop() } catch (_: Exception) {}
         try { recorder?.release() } catch (_: Exception) {}
         recorder = null
-        recordFile = null
         try { session?.close() } catch (_: Exception) {}
         session = null
         try { device?.close() } catch (_: Exception) {}

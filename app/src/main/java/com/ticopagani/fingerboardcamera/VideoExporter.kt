@@ -8,6 +8,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
+import android.net.Uri
 import android.opengl.GLES20
 import android.os.Handler
 import android.os.HandlerThread
@@ -48,17 +49,17 @@ class VideoExporter(private val ctx: Context) {
         }
     }
 
-    fun export(input: File, p: Params, progress: (Float) -> Unit): File {
+    fun export(input: Uri, p: Params, progress: (Float) -> Unit): File {
         val retriever = MediaMetadataRetriever()
         val rotation = try {
-            retriever.setDataSource(input.absolutePath)
+            retriever.setDataSource(ctx, input)
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
         } finally {
             retriever.release()
         }
 
         val extractor = MediaExtractor()
-        extractor.setDataSource(input.absolutePath)
+        extractor.setDataSource(ctx, input, null)
         var track = -1
         var inFmt: MediaFormat? = null
         for (i in 0 until extractor.trackCount) {

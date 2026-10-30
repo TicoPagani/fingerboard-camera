@@ -18,7 +18,7 @@ Todo envio de código gera um APK novo automaticamente (aba *Actions*). Como tod
 - Troca de lente (**LENTE**: 1x ↔ 0.6x) — segure o botão pra ver o diagnóstico das câmeras
 - Editor: toque na miniatura → escolha o trecho em slow com as duas barras, ajuste fisheye e vinheta e exporte
 
-O vídeo é gravado limpo e o efeito é aplicado na exportação. Fotos e vídeos exportados vão pra galeria em *FingerboardCamera*.
+O vídeo é gravado limpo direto na galeria (*Filmes › FingerboardCamera › Originais*) e o efeito é aplicado na exportação (*Filmes › FingerboardCamera*). No editor, o botão **CLIPES** abre qualquer clipe da galeria, e dá pra apagar o original depois de exportar. Fotos vão pra *Fotos › FingerboardCamera*.
 
 ## Limitações conhecidas (v0.1)
 
